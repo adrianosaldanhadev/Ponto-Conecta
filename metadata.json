@@ -1,0 +1,6 @@
+{
+  "name": "Ponto Conecta Lan House",
+  "description": "Sistema de relógio de ponto eletrônico corporativo com gestão de funcionários e relatórios administrativos.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": []
+}

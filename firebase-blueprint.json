@@ -1,0 +1,40 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "System user (employee or admin)",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["employee", "admin"] },
+        "cpf": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "name", "email", "role"]
+    },
+    "TimeEntry": {
+      "title": "TimeEntry",
+      "description": "A punch-in or punch-out record",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "type": { "type": "string", "enum": ["in", "out"] },
+        "notes": { "type": "string" }
+      },
+      "required": ["userId", "timestamp", "type"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "User profiles and roles"
+    },
+    "timeEntries/{entryId}": {
+      "schema": "TimeEntry",
+      "description": "Employee logs"
+    }
+  }
+}
