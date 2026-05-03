@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
-import { auth, db } from '../lib/firebase';
-import { doc, getDoc, setDoc, serverTimestamp, deleteDoc } from 'firebase/firestore';
+import { auth, db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { doc, getDoc, setDoc, serverTimestamp, deleteDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { Clock, LogIn, ShieldAlert, Mail, Lock, UserPlus, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -11,13 +11,19 @@ export const Login: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<LoginMode>('login');
-  const [email, setEmail] = useState('');
+  const [emailInput, setEmailInput] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
   const processUserRef = async (user: any, userEmail: string | null) => {
     const userRef = doc(db, 'users', user.uid);
-    const userSnap = await getDoc(userRef);
+    let userSnap;
+    try {
+      userSnap = await getDoc(userRef);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.GET, `users/${user.uid}`);
+      return;
+    }
     
     if (!userSnap.exists()) {
       const isMaster = userEmail === 'jonny2005ster@gmail.com';
@@ -30,7 +36,13 @@ export const Login: React.FC = () => {
       }
 
       const emailRef = doc(db, 'users', userEmail);
-      const emailSnap = await getDoc(emailRef);
+      let emailSnap;
+      try {
+        emailSnap = await getDoc(emailRef);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.GET, `users/${userEmail}`);
+        return;
+      }
       
       if (emailSnap.exists()) {
         const preData = emailSnap.data();
@@ -41,22 +53,35 @@ export const Login: React.FC = () => {
           return;
         }
 
-        await setDoc(userRef, {
-          ...preData,
-          uid: user.uid,
-          createdAt: preData.createdAt || serverTimestamp(),
-        });
-        await deleteDoc(emailRef);
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { password: _, ...dataToSave } = preData;
+
+        try {
+          await setDoc(userRef, {
+            ...dataToSave,
+            uid: user.uid,
+            createdAt: preData.createdAt || serverTimestamp(),
+          });
+          await deleteDoc(emailRef);
+        } catch (err) {
+          handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}`);
+          return;
+        }
       } else if (isMaster) {
         // Master user creates their own profile automatically
-        await setDoc(userRef, {
-          uid: user.uid,
-          name: user.displayName || 'Master Admin',
-          email: userEmail,
-          role: 'admin',
-          status: 'active',
-          createdAt: serverTimestamp(),
-        });
+        try {
+          await setDoc(userRef, {
+            uid: user.uid,
+            name: user.displayName || 'Master Admin',
+            email: userEmail,
+            role: 'admin',
+            status: 'active',
+            createdAt: serverTimestamp(),
+          });
+        } catch (err) {
+          handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}`);
+          return;
+        }
       } else {
         // Deny access - must be registered by Master
         await auth.signOut();
@@ -89,7 +114,7 @@ export const Login: React.FC = () => {
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password) {
+    if (!emailInput || !password) {
       setError('Por favor, preencha todos os campos.');
       return;
     }
@@ -103,16 +128,32 @@ export const Login: React.FC = () => {
     setError(null);
 
     try {
+      const email = emailInput.trim().toLowerCase();
+
       if (mode === 'login') {
         const result = await signInWithEmailAndPassword(auth, email, password);
         await processUserRef(result.user, result.user.email);
       } else {
         // Register mode: First check if email is pre-registered
         const emailRef = doc(db, 'users', email);
-        const emailSnap = await getDoc(emailRef);
+        let emailSnap;
+        try {
+          emailSnap = await getDoc(emailRef);
+        } catch (err) {
+          handleFirestoreError(err, OperationType.GET, `users/${email}`);
+          return;
+        }
         
         if (!emailSnap.exists() && email !== 'jonny2005ster@gmail.com') {
-          setError('Este e-mail não está cadastrado no sistema. Entre em contato com o administrador.');
+          setError('Este e-mail não possui pré-cadastro no sistema. Entre em contato com o administrador.');
+          setLoading(false);
+          return;
+        }
+
+        const preData = emailSnap.data();
+        // If the admin set a password, it MUST match for activation
+        if (preData?.password && preData.password !== password) {
+          setError('A senha para ativação está incorreta. Verifique com seu administrador.');
           setLoading(false);
           return;
         }
@@ -121,26 +162,42 @@ export const Login: React.FC = () => {
         await processUserRef(result.user, result.user.email);
       }
     } catch (err: any) {
-      handleAuthError(err);
+      handleAuthError(err, emailInput);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleAuthError = (err: any) => {
+  const handleAuthError = async (err: any, emailInput?: string) => {
     console.error("Auth Error:", err);
     if (err.code === 'auth/network-request-failed') {
       setError('Erro de rede: Verifique sua conexão.');
     } else if (err.code === 'auth/popup-closed-by-user') {
       setError('O login foi cancelado.');
     } else if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
-      setError('E-mail ou senha incorretos.');
+      // Check if this is a pre-registered user who hasn't activated yet
+      if (mode === 'login' && emailInput) {
+        try {
+          const email = emailInput.trim().toLowerCase();
+          const emailRef = doc(db, 'users', email);
+          const emailSnap = await getDoc(emailRef);
+          if (emailSnap.exists()) {
+            setError('Sua conta ainda não foi ativada. Clique em "Ativar via E-mail" abaixo para definir sua senha e acessar o sistema.');
+            return;
+          }
+        } catch (e) {
+          console.error("Error checking pre-registration:", e);
+        }
+      }
+      setError('E-mail ou senha incorretos. Verifique os dados e tente novamente.');
     } else if (err.code === 'auth/email-already-in-use') {
-      setError('Este e-mail já possui uma conta ativa.');
+      setError('Este e-mail já possui uma conta ativa. Se você esqueceu sua senha, entre em contato com o administrador para redefinição ou use a opção de login.');
     } else if (err.code === 'auth/weak-password') {
       setError('A senha deve ter pelo menos 6 caracteres.');
+    } else if (err.code === 'auth/too-many-requests') {
+      setError('Muitas tentativas sem sucesso. Tente novamente mais tarde.');
     } else {
-      setError('Falha na autenticação. Tente novamente mais tarde.');
+      setError('Falha na autenticação: ' + (err.message || 'Tente novamente.'));
     }
   };
 
@@ -175,6 +232,17 @@ export const Login: React.FC = () => {
         </AnimatePresence>
 
         <form onSubmit={handleEmailAuth} className="space-y-4 text-left">
+          {mode === 'register' && (
+            <motion.div 
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="p-3 bg-amber-50 border border-amber-100 rounded-2xl text-[9px] text-amber-700 font-bold uppercase tracking-wider flex items-center gap-2 mb-2"
+            >
+              <ShieldAlert className="w-3.5 h-3.5 flex-shrink-0" />
+              <span>Use a senha definida pelo administrador no seu cadastro para ativar a conta.</span>
+            </motion.div>
+          )}
+
           <div className="space-y-1.5">
             <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-wider">E-mail</label>
             <div className="relative">
@@ -184,8 +252,8 @@ export const Login: React.FC = () => {
                 required
                 className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all font-medium"
                 placeholder="seu@email.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                value={emailInput}
+                onChange={(e) => setEmailInput(e.target.value)}
               />
             </div>
           </div>

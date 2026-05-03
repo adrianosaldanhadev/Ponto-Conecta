@@ -3,7 +3,7 @@ import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, query, orderBy, onSnapshot, doc, updateDoc, deleteDoc, setDoc, serverTimestamp, getDocs, where } from 'firebase/firestore';
 import { UserProfile, TimeEntry, UserRole } from '../types';
 import { format } from 'date-fns';
-import { Users, ClipboardList, Trash2, Edit2, ShieldCheck, User as UserIcon, Search, UserPlus, X, Save, Download, MapPin, Filter, Calendar, History, BarChart3, Camera, Upload } from 'lucide-react';
+import { Users, ClipboardList, Trash2, Edit2, ShieldCheck, User as UserIcon, Search, UserPlus, X, Save, Download, MapPin, Filter, Calendar, History, BarChart3, Camera, Upload, Lock, Eye, EyeOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { startOfDay, endOfDay, isWithinInterval, parseISO, subDays } from 'date-fns';
@@ -30,9 +30,23 @@ export const AdminDashboard: React.FC = () => {
   const [editingUser, setEditingUser] = useState<Partial<UserProfile> | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
+  const [showModalPassword, setShowModalPassword] = useState(false);
+
   useEffect(() => {
     const usersUnsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
-      setUsers(snapshot.docs.map(doc => ({ ...doc.data() }) as UserProfile));
+      const allDocs = snapshot.docs.map(doc => ({ ...doc.data(), docId: doc.id }) as UserProfile & { docId: string });
+      
+      // De-duplicate by email: prefer doc with uid (activated) over pre-registered one (id is email)
+      const uniqueUsersMap = new Map<string, UserProfile & { docId: string }>();
+      allDocs.forEach(u => {
+        const email = u.email.toLowerCase();
+        const existing = uniqueUsersMap.get(email);
+        if (!existing || (u.uid && !existing.uid)) {
+          uniqueUsersMap.set(email, u);
+        }
+      });
+      
+      setUsers(Array.from(uniqueUsersMap.values()));
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'users'));
 
     const entriesQuery = query(collection(db, 'timeEntries'), orderBy('timestamp', 'desc'));
@@ -55,7 +69,8 @@ export const AdminDashboard: React.FC = () => {
       matricula: '', 
       department: '', 
       status: 'active',
-      workload: 8
+      workload: 8,
+      password: ''
     });
     setIsUserModalOpen(true);
   };
@@ -73,6 +88,7 @@ export const AdminDashboard: React.FC = () => {
         status: editingUser.status || 'active',
         workload: Number(editingUser.workload) || 8,
         photoURL: editingUser.photoURL || '',
+        password: editingUser.password || '',
       };
 
       if (editingUser.uid) {
@@ -80,11 +96,12 @@ export const AdminDashboard: React.FC = () => {
         await updateDoc(doc(db, 'users', editingUser.uid), userData);
       } else {
         // Create new (Pre-registration)
-        const docId = editingUser.email;
+        const cleanEmail = editingUser.email.trim().toLowerCase();
+        const docId = cleanEmail;
         await setDoc(doc(db, 'users', docId), {
           ...userData,
           uid: '',
-          email: editingUser.email,
+          email: cleanEmail,
           createdAt: serverTimestamp(),
         });
       }
@@ -528,7 +545,7 @@ export const AdminDashboard: React.FC = () => {
                   >
                     <option value="all">Todos</option>
                     {users.map(u => (
-                      <option key={u.uid || u.email} value={u.uid}>{u.name}</option>
+                      <option key={(u as any).docId || u.email} value={u.uid}>{u.name}</option>
                     ))}
                   </select>
                 </div>
@@ -722,7 +739,7 @@ export const AdminDashboard: React.FC = () => {
                       initial={{ opacity: 0, scale: 0.95 }}
                       animate={{ opacity: 1, scale: 1 }}
                       exit={{ opacity: 0, scale: 0.95 }}
-                      key={user.uid || user.email} 
+                      key={(user as any).docId || user.email} 
                       className={cn(
                         "bg-white p-5 rounded-3xl border transition-all relative group flex flex-col justify-between h-full",
                         user.status === 'inactive' ? "border-slate-100 opacity-60 bg-slate-50/50" : "border-slate-100 shadow-sm hover:shadow-xl hover:shadow-slate-200/50 hover:-translate-y-1"
@@ -748,6 +765,12 @@ export const AdminDashboard: React.FC = () => {
                             )}
                           </div>
                           <div className="text-xs text-slate-500 truncate">{user.email}</div>
+                          {user.password && (
+                            <div className="mt-1 flex items-center gap-1 px-1.5 py-0.5 bg-amber-50 border border-amber-100 rounded-lg text-[9px] text-amber-700 font-bold uppercase w-fit">
+                              <Lock className="w-2.5 h-2.5" />
+                              Senha: {user.password}
+                            </div>
+                          )}
                           <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5">
                             {user.matricula && <div className="text-[10px] text-slate-400 font-mono">Matrícula: {user.matricula}</div>}
                             {user.department && <div className="text-[10px] text-blue-500 font-bold uppercase tracking-wider">{user.department}</div>}
@@ -795,7 +818,7 @@ export const AdminDashboard: React.FC = () => {
                           Alterar
                         </button>
                         <button 
-                          onClick={() => deleteUser(user.uid || user.email)}
+                          onClick={() => deleteUser((user as any).docId || user.uid || user.email)}
                           className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-50 text-slate-600 font-bold text-[10px] uppercase hover:bg-red-50 hover:text-red-600 transition-all border border-transparent hover:border-red-100 shadow-sm"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -868,7 +891,7 @@ export const AdminDashboard: React.FC = () => {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {filteredUsers.map(user => (
-                      <tr key={user.uid || user.email} className="hover:bg-slate-50/80 transition-colors group">
+                      <tr key={(user as any).docId || user.email} className="hover:bg-slate-50/80 transition-colors group">
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 overflow-hidden border border-slate-200 shadow-sm">
@@ -880,7 +903,14 @@ export const AdminDashboard: React.FC = () => {
                             </div>
                             <div>
                               <div className="font-semibold text-slate-700">{user.name}</div>
-                              <div className="text-[10px] text-slate-400">{user.matricula || 'Sem matrícula'}</div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] text-slate-400">{user.matricula || 'Sem matrícula'}</span>
+                                {user.password && (
+                                  <span className="text-[9px] px-1.5 py-0.5 bg-amber-50 text-amber-600 border border-amber-100 rounded font-bold uppercase flex items-center gap-1">
+                                    <Lock className="w-2 h-2" /> {user.password}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -1047,8 +1077,30 @@ export const AdminDashboard: React.FC = () => {
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-500 uppercase ml-1">Status da Conta</label>
-                    <div className="flex gap-2">
+                    <label className="text-xs font-bold text-slate-500 uppercase ml-1">Senha de Acesso</label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
+                      <button 
+                        type="button"
+                        onClick={() => setShowModalPassword(!showModalPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                      >
+                        {showModalPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                      <input 
+                        type={showModalPassword ? "text" : "password"} 
+                        className="w-full pl-10 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-700 font-mono"
+                        placeholder="Senha inicial"
+                        value={editingUser.password || ''}
+                        onChange={(e) => setEditingUser({ ...editingUser, password: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-500 uppercase ml-1">Status da Conta</label>
+                  <div className="flex gap-2">
                       <button 
                         onClick={() => setEditingUser({...editingUser, status: 'active'})}
                         className={cn(
@@ -1074,7 +1126,6 @@ export const AdminDashboard: React.FC = () => {
                     </div>
                   </div>
                 </div>
-              </div>
 
               <div className="p-6 bg-slate-50/50 border-t border-slate-100 flex gap-3">
                 <button 

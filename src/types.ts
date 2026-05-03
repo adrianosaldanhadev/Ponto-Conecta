@@ -14,6 +14,7 @@ export interface UserProfile {
   workload?: number;
   bankOfHours?: number;
   photoURL?: string;
+  password?: string;
   createdAt: Timestamp;
 }
 

@@ -41,18 +41,22 @@ service cloud.firestore {
                data.email is string && data.email.size() > 0;
       }
 
-      // Read: Owner can see own, Master (Bootstrap) can see all
-      allow get: if isOwner(userId) || isBootstrapAdmin();
-      allow list: if isBootstrapAdmin();
+      // Read: Allow public lookup by ID (email or UID) to support login/registration
+      // and finding email by name (which uses a query list)
+      allow get: if true;
+      allow list: if true;
       
-      // CREATE/UPDATE/DELETE: Only the Master user (Bootstrap) can manage employees
-      // Exception: Allow Master to create their own profile if missing
-      allow create: if (isBootstrapAdmin() && isValidUser(request.resource.data));
+      // CREATE/UPDATE/DELETE: Only the Master user (Bootstrap) or existing Admin can manage employees
+      // Exception: Allow a newly authenticated user to create their own UID doc if their authenticated email matches.
+      allow create: if (isBootstrapAdmin() || isAdmin()) || 
+                    (isOwner(userId) && request.resource.data.email == request.auth.token.email);
       
-      allow update: if isBootstrapAdmin() && 
-                    request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'name', 'cpf']);
+      allow update: if (isBootstrapAdmin() || isAdmin()) || 
+                    (isOwner(userId) && 
+                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'photoURL', 'cpf', 'uid', 'status']));
 
-      allow delete: if isBootstrapAdmin();
+      allow delete: if isBootstrapAdmin() || isAdmin() || 
+                    (isSignedIn() && resource.data.email == request.auth.token.email);
     }
 
     // --- Time Entries Collection ---
