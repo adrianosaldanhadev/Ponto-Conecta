@@ -75,8 +75,8 @@ service cloud.firestore {
       // Users can create their own entries
       allow create: if isSignedIn() && isValidTimeEntry(request.resource.data);
       
-      // Only admins can delete entries
-      allow delete: if isAdmin();
+      // Only admins can delete or update entries
+      allow update, delete: if isAdmin();
     }
   }
 }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { collection, query, orderBy, onSnapshot, doc, updateDoc, deleteDoc, setDoc, serverTimestamp, getDocs, where } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, doc, updateDoc, deleteDoc, setDoc, serverTimestamp, getDocs, where, Timestamp } from 'firebase/firestore';
 import { UserProfile, TimeEntry, UserRole } from '../types';
 import { format } from 'date-fns';
 import { Users, ClipboardList, Trash2, Edit2, ShieldCheck, User as UserIcon, Search, UserPlus, X, Save, Download, MapPin, Filter, Calendar, History, BarChart3, Camera, Upload, Lock, Eye, EyeOff } from 'lucide-react';
@@ -28,6 +28,9 @@ export const AdminDashboard: React.FC = () => {
   // Modal states
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<Partial<UserProfile> | null>(null);
+  const [isEntryModalOpen, setIsEntryModalOpen] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<Partial<TimeEntry> | null>(null);
+  const [entryDateTime, setEntryDateTime] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
   const [showModalPassword, setShowModalPassword] = useState(false);
@@ -73,6 +76,35 @@ export const AdminDashboard: React.FC = () => {
       password: ''
     });
     setIsUserModalOpen(true);
+  };
+
+  const handleOpenEntryModal = (entry: TimeEntry) => {
+    setEditingEntry(entry);
+    if (entry.timestamp) {
+      // Format as YYYY-MM-DDThh:mm for datetime-local input
+      const date = entry.timestamp.toDate();
+      const offset = date.getTimezoneOffset() * 60000;
+      const localISOTime = new Date(date.getTime() - offset).toISOString().slice(0, 16);
+      setEntryDateTime(localISOTime);
+    }
+    setIsEntryModalOpen(true);
+  };
+
+  const handleSaveEntry = async () => {
+    if (!editingEntry || !editingEntry.id || !entryDateTime) return;
+    setIsSaving(true);
+    try {
+      const newTimestamp = Timestamp.fromDate(new Date(entryDateTime));
+      await updateDoc(doc(db, 'timeEntries', editingEntry.id), {
+        timestamp: newTimestamp,
+        type: editingEntry.type
+      });
+      setIsEntryModalOpen(false);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `timeEntries/${editingEntry.id}`);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleSaveUser = async () => {
@@ -659,12 +691,22 @@ export const AdminDashboard: React.FC = () => {
                           )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button 
-                            onClick={() => deleteEntry(entry.id!)}
-                            className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          <div className="flex items-center justify-end gap-2">
+                            <button 
+                              onClick={() => handleOpenEntryModal(entry)}
+                              className="p-2 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                              title="Editar registro"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={() => deleteEntry(entry.id!)}
+                              className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Excluir registro"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1141,6 +1183,96 @@ export const AdminDashboard: React.FC = () => {
                 >
                   {isSaving ? <X className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
                   {editingUser.uid ? 'Atualizar' : 'Cadastrar'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Entry Editing Modal */}
+      <AnimatePresence>
+        {isEntryModalOpen && editingEntry && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden"
+            >
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <h3 className="text-xl font-bold text-slate-800">Editar Registro de Ponto</h3>
+                <button onClick={() => setIsEntryModalOpen(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-6">
+                <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center text-blue-600 shadow-sm">
+                    <UserIcon className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <p className="font-bold text-slate-800">{editingEntry.userName}</p>
+                    <p className="text-xs text-slate-500 uppercase font-black tracking-widest">{editingEntry.type === 'in' ? 'Entrada' : 'Saída'}</p>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-500 uppercase ml-1">Data e Hora</label>
+                    <input 
+                      type="datetime-local" 
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-800 font-bold"
+                      value={entryDateTime}
+                      onChange={(e) => setEntryDateTime(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-500 uppercase ml-1">Tipo de Registro</label>
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => setEditingEntry({...editingEntry, type: 'in'})}
+                        className={cn(
+                          "flex-1 py-3 rounded-xl border font-bold text-xs uppercase transition-all",
+                          editingEntry.type === 'in' 
+                            ? "bg-emerald-50 border-emerald-200 text-emerald-600 shadow-sm" 
+                            : "bg-white border-slate-100 text-slate-400"
+                        )}
+                      >
+                        Entrada
+                      </button>
+                      <button 
+                        onClick={() => setEditingEntry({...editingEntry, type: 'out'})}
+                        className={cn(
+                          "flex-1 py-3 rounded-xl border font-bold text-xs uppercase transition-all",
+                          editingEntry.type === 'out' 
+                            ? "bg-red-50 border-red-200 text-red-600 shadow-sm" 
+                            : "bg-white border-slate-100 text-slate-400"
+                        )}
+                      >
+                        Saída
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-6 bg-slate-50/50 border-t border-slate-100 flex gap-3">
+                <button 
+                  onClick={() => setIsEntryModalOpen(false)}
+                  className="flex-1 px-4 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-100"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={handleSaveEntry}
+                  disabled={isSaving}
+                  className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 flex items-center justify-center gap-2 shadow-lg shadow-blue-100 disabled:opacity-50"
+                >
+                  {isSaving ? <X className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                  Salvar Alterações
                 </button>
               </div>
             </motion.div>
