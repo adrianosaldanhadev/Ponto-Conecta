@@ -287,7 +287,7 @@ export const AdminDashboard: React.FC = () => {
     let totalWorkedMinutes = 0;
     let totalExpectedMinutes = 0;
 
-    Object.entries(days).forEach(([date, dayEntries]) => {
+    Object.entries(days).forEach(([dateStr, dayEntries]) => {
       let dailyMinutes = 0;
       for (let i = 0; i < dayEntries.length - 1; i += 2) {
         if (dayEntries[i].type === 'in' && dayEntries[i+1]?.type === 'out') {
@@ -296,7 +296,21 @@ export const AdminDashboard: React.FC = () => {
         }
       }
       
-      const workloadMinutes = user.workload! * 60;
+      // Calculate workload based on day of week
+      // Get day of week from first entry of the day
+      const dayDate = dayEntries[0].timestamp!.toDate();
+      const dayOfWeek = dayDate.getDay(); // 0: Sun, 1: Mon, ..., 6: Sat
+      
+      let workloadMinutes = 0;
+      if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+        // Mon-Fri: Use workload or 8h default
+        workloadMinutes = (user.workload || 8) * 60;
+      } else if (dayOfWeek === 6) {
+        // Saturday: Half of workload or 4h default
+        workloadMinutes = ((user.workload || 8) / 2) * 60;
+      }
+      // Sunday: 0 workload
+      
       totalWorkedMinutes += dailyMinutes;
       totalExpectedMinutes += workloadMinutes;
     });
@@ -1109,7 +1123,7 @@ export const AdminDashboard: React.FC = () => {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-500 uppercase ml-1">Carga Horária (Horas/Dia)</label>
+                    <label className="text-xs font-bold text-slate-500 uppercase ml-1">Carga Horária (Seg-Sex - Horas/Dia)</label>
                     <input 
                       type="number" 
                       className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-700"
@@ -1117,6 +1131,7 @@ export const AdminDashboard: React.FC = () => {
                       value={editingUser.workload || ''}
                       onChange={(e) => setEditingUser({ ...editingUser, workload: Number(e.target.value) })}
                     />
+                    <p className="text-[9px] text-slate-400 ml-1">Sábados serão calculados automaticamente com metade desta carga.</p>
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-slate-500 uppercase ml-1">Senha de Acesso</label>
