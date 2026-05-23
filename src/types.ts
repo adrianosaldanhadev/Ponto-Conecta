@@ -12,6 +12,8 @@ export interface UserProfile {
   department?: string;
   status: 'active' | 'inactive';
   workload?: number;
+  contractIn?: string;
+  contractOut?: string;
   bankOfHours?: number;
   photoURL?: string;
   password?: string;

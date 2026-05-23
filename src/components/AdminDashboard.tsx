@@ -35,6 +35,29 @@ export const AdminDashboard: React.FC = () => {
 
   const [showModalPassword, setShowModalPassword] = useState(false);
 
+  const isAfterContractualTime = (entry: TimeEntry) => {
+    if (!entry.timestamp) return false;
+    
+    // Find the user's profile
+    const user = users.find(u => u.uid === entry.userId || (u as any).docId === entry.userId);
+    
+    // Get entry time as "HH:MM"
+    const entryDate = entry.timestamp.toDate();
+    const entryHours = String(entryDate.getHours()).padStart(2, '0');
+    const entryMinutes = String(entryDate.getMinutes()).padStart(2, '0');
+    const entryTimeStr = `${entryHours}:${entryMinutes}`;
+    
+    if (entry.type === 'in') {
+      const limit = user?.contractIn || '08:00';
+      return entryTimeStr > limit;
+    } else if (entry.type === 'out') {
+      const limit = user?.contractOut || '17:00';
+      return entryTimeStr > limit;
+    }
+    
+    return false;
+  };
+
   useEffect(() => {
     const usersUnsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
       const allDocs = snapshot.docs.map(doc => ({ ...doc.data(), docId: doc.id }) as UserProfile & { docId: string });
@@ -64,7 +87,11 @@ export const AdminDashboard: React.FC = () => {
   }, []);
 
   const handleOpenUserModal = (user?: UserProfile) => {
-    setEditingUser(user || { 
+    setEditingUser(user ? {
+      ...user,
+      contractIn: user.contractIn || '08:00',
+      contractOut: user.contractOut || '17:00'
+    } : { 
       name: '', 
       email: '', 
       role: 'employee', 
@@ -73,6 +100,8 @@ export const AdminDashboard: React.FC = () => {
       department: '', 
       status: 'active',
       workload: 8,
+      contractIn: '08:00',
+      contractOut: '17:00',
       password: ''
     });
     setIsUserModalOpen(true);
@@ -119,6 +148,8 @@ export const AdminDashboard: React.FC = () => {
         department: editingUser.department || '',
         status: editingUser.status || 'active',
         workload: Number(editingUser.workload) || 8,
+        contractIn: editingUser.contractIn || '08:00',
+        contractOut: editingUser.contractOut || '17:00',
         photoURL: editingUser.photoURL || '',
         password: editingUser.password || '',
       };
@@ -677,8 +708,27 @@ export const AdminDashboard: React.FC = () => {
                         <td className="px-6 py-4 whitespace-nowrap text-slate-500 text-sm text-center">
                           {entry.timestamp ? format(entry.timestamp.toDate(), 'dd/MM/yyyy') : '---'}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap font-mono font-bold text-slate-800 text-center">
-                          {entry.timestamp ? format(entry.timestamp.toDate(), 'HH:mm:ss') : '...'}
+                        <td className="px-6 py-4 whitespace-nowrap font-mono font-bold text-center">
+                          {entry.timestamp ? (
+                            (() => {
+                              const isAfter = isAfterContractualTime(entry);
+                              const formattedTime = format(entry.timestamp.toDate(), 'HH:mm:ss');
+                              if (isAfter) {
+                                const user = users.find(u => u.uid === entry.userId || (u as any).docId === entry.userId);
+                                const limit = entry.type === 'in' ? (user?.contractIn || '08:00') : (user?.contractOut || '17:00');
+                                return (
+                                  <span 
+                                    className="px-2.5 py-1 rounded-xl bg-red-50 text-red-600 border border-red-100 font-extrabold text-xs inline-flex items-center gap-1.5 shadow-sm shadow-red-50/50"
+                                    title={`Após o horário contratual! Esperado anterior ou igual a: ${limit}`}
+                                  >
+                                    <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shrink-0" />
+                                    {formattedTime}
+                                  </span>
+                                );
+                              }
+                              return <span className="text-slate-800 font-bold">{formattedTime}</span>;
+                            })()
+                          ) : '...'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-center">
                           <span className={cn(
@@ -1152,6 +1202,29 @@ export const AdminDashboard: React.FC = () => {
                         onChange={(e) => setEditingUser({ ...editingUser, password: e.target.value })}
                       />
                     </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-500 uppercase ml-1">Horário de Entrada Contratual</label>
+                    <input 
+                      type="time" 
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-700 font-bold"
+                      value={editingUser.contractIn || '08:00'}
+                      onChange={(e) => setEditingUser({ ...editingUser, contractIn: e.target.value })}
+                    />
+                    <p className="text-[9px] text-slate-400 ml-1">Entradas registradas após este horário serão destacadas em vermelho.</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-500 uppercase ml-1">Horário de Saída Contratual</label>
+                    <input 
+                      type="time" 
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-700 font-bold"
+                      value={editingUser.contractOut || '17:00'}
+                      onChange={(e) => setEditingUser({ ...editingUser, contractOut: e.target.value })}
+                    />
+                    <p className="text-[9px] text-slate-400 ml-1">Saídas registradas após este horário serão destacadas em vermelho.</p>
                   </div>
                 </div>
 
