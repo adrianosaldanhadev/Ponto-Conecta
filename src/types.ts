@@ -14,6 +14,8 @@ export interface UserProfile {
   workload?: number;
   contractIn?: string;
   contractOut?: string;
+  jobTitle?: string;
+  salary?: number;
   bankOfHours?: number;
   photoURL?: string;
   password?: string;
@@ -33,4 +35,18 @@ export interface TimeEntry {
     lat: number;
     lng: number;
   };
+}
+
+export type JustificationType = 'abono' | 'falta_justificada' | 'ferias';
+
+export interface Justification {
+  id?: string;
+  userId: string;
+  userName: string;
+  type: JustificationType;
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+  minutesAbono?: number; // optionally excuse X minutes (useful for partial workdays/delays)
+  description: string;
+  createdAt?: Timestamp;
 }

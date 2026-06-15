@@ -20,12 +20,13 @@ service cloud.firestore {
       return isSignedIn() && request.auth.token.email == 'jonny2005ster@gmail.com';
     }
 
-    function getRole() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
-    }
-
     function isAdmin() {
-      return isSignedIn() && (isBootstrapAdmin() || getRole() == 'admin');
+      return isSignedIn() && (
+        isBootstrapAdmin() || (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+        )
+      );
     }
 
     function isValidId(id) {
@@ -72,11 +73,30 @@ service cloud.firestore {
       allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
       allow get: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
       
-      // Users can create their own entries
-      allow create: if isSignedIn() && isValidTimeEntry(request.resource.data);
+      // Users can create their own entries, and admins can create manual entries
+      allow create: if isAdmin() || (isSignedIn() && isValidTimeEntry(request.resource.data));
       
       // Only admins can delete or update entries
       allow update, delete: if isAdmin();
+    }
+
+    // --- Justifications Collection ---
+    match /justifications/{justificationId} {
+      function isValidJustification(data) {
+        return data.userId is string && data.userId.size() <= 128 &&
+               data.userName is string && data.userName.size() <= 100 &&
+               data.type in ['abono', 'falta_justificada', 'ferias'] &&
+               data.startDate is string && data.startDate.size() <= 20 &&
+               data.endDate is string && data.endDate.size() <= 20 &&
+               data.description is string && data.description.size() <= 500;
+      }
+
+      allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow get: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      
+      allow create: if isAdmin() && isValidJustification(request.resource.data);
+      allow update: if isAdmin() && isValidJustification(request.resource.data);
+      allow delete: if isAdmin();
     }
   }
 }

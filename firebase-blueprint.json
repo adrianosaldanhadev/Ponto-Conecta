@@ -10,7 +10,14 @@
         "email": { "type": "string" },
         "role": { "type": "string", "enum": ["employee", "admin"] },
         "cpf": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "createdAt": { "type": "string", "format": "date-time" },
+        "contractIn": { "type": "string" },
+        "contractOut": { "type": "string" },
+        "workload": { "type": "number" },
+        "jobTitle": { "type": "string" },
+        "salary": { "type": "number" },
+        "photoURL": { "type": "string" },
+        "password": { "type": "string" }
       },
       "required": ["uid", "name", "email", "role"]
     },
@@ -25,6 +32,22 @@
         "notes": { "type": "string" }
       },
       "required": ["userId", "timestamp", "type"]
+    },
+    "Justification": {
+      "title": "Justification",
+      "description": "An excused leave, holiday/vacation, or delay allowance",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "type": { "type": "string", "enum": ["abono", "falta_justificada", "ferias"] },
+        "startDate": { "type": "string" },
+        "endDate": { "type": "string" },
+        "minutesAbono": { "type": "number" },
+        "description": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "userName", "type", "startDate", "endDate", "description"]
     }
   },
   "firestore": {
@@ -35,6 +58,10 @@
     "timeEntries/{entryId}": {
       "schema": "TimeEntry",
       "description": "Employee logs"
+    },
+    "justifications/{justificationId}": {
+      "schema": "Justification",
+      "description": "Employee excused leaves, vacations or delay offsets"
     }
   }
 }
